@@ -165,6 +165,11 @@ The main configuration files are stored under:
 config/
 ```
 
+The core model files are stored under:
+```text
+model/
+```
+
 A typical training command is:
 
 ```bash
@@ -178,6 +183,8 @@ python test.py --config config/fm_2p5d.yaml --ckpt your_ckpt.ckpt
 ```
 
 The same YAML config file used for training can also be used for testing.
+
+You can define your own model and configs in a similar style.
 
 ### Dataset and DataModule
 
@@ -201,7 +208,7 @@ where:
 - `residual` is the target residual used for residual learning
 - `name` is the sample name used when saving predictions
 
-To use a new dataset, users can define their own dataset or datamodule class in `dataset.py`, then point to it in the YAML config file. This keeps the training and testing scripts unchanged while allowing the data pipeline to be customized.
+To use a new dataset, you can define your own dataset or datamodule class in `dataset.py`, then point to it in the YAML config file. This keeps the training and testing scripts unchanged while allowing the data pipeline to be customized.
 
 ### PyTorch Lightning
 
