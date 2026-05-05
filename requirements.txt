@@ -1,0 +1,11 @@
+numpy
+scipy
+pandas
+matplotlib
+tqdm
+PyYAML
+nibabel
+diffusers
+pytorch-lightning
+torchmetrics
+ipywidgets

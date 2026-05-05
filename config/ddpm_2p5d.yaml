@@ -1,0 +1,42 @@
+model:
+  target: model.ddpm.DDPM
+  params:
+    image_size: 224
+    in_channels: 10
+    out_channels: 1
+    unet_channels: [32, 64, 96, 128]
+    num_train_timesteps: 1000
+    num_inference_steps: 100
+    initial_lr: 1.0e-4
+    val_metric_batches: 1
+
+data:
+  target: dataset.TwoP5DSRSliceDataModule
+  params:
+    data_dir: data/
+    batch_size: 8
+    num_workers: 4
+    slice_axis: 1
+    slice_nums: 32
+    depth: 9
+    cache_mode: memmap
+
+trainer:
+  devices: [0]
+  accelerator: auto
+  max_epochs: 10
+  check_val_every_n_epoch: 1
+  strategy: auto
+  precision: 16-mixed
+  ckpt_dir: checkpoints/DDPM_2p5d
+  ckpt_monitor: val/loss
+  mode: min
+
+log:
+  project: MRI_SR_Tutorial
+  name: DDPM_2p5d
+  log_dir: logs
+
+test_output_dir: results/DDPM_2p5d
+
+seed: 24
