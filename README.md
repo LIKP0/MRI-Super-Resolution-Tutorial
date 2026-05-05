@@ -317,6 +317,6 @@ Quantitative metrics such as PSNR and SSIM are useful, but they should not be th
 
 ## Acknowledgements
 
-This tutorial uses the Neurite-OASIS dataset, which is based on the OASIS-1 brain MRI dataset.
+This tutorial uses the [Neurite-OASIS](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md) dataset, which is based on the OASIS-I brain MRI dataset.
 
-The implementation is built with PyTorch, PyTorch Lightning, MONAI, diffusers, and other open-source Python libraries.
+The implementation is built with PyTorch, PyTorch Lightning, MONAI and diffusers.
