@@ -14,6 +14,12 @@ The project is educational by design. The notebooks explain the workflow step by
 
 ---
 
+## Updates
+
+tutorial/04_downstream_seg_on_full_sr.ipynb is on its way!
+
+We will show a more complete SR prediction with larger models, and how they influence the downstream segmentation task with SynthSeg!
+
 ## Repository Structure
 
 ```text
