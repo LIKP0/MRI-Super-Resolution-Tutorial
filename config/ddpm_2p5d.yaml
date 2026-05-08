@@ -11,7 +11,7 @@ model:
     val_metric_batches: 1
 
 data:
-  target: dataset.TwoP5DSRSliceDataModule
+  target: dataset.DegradeSRSliceDataModule
   params:
     data_dir: data/
     batch_size: 8
@@ -24,7 +24,7 @@ data:
 trainer:
   devices: [0]
   accelerator: auto
-  max_epochs: 10
+  max_epochs: 15
   check_val_every_n_epoch: 1
   strategy: auto
   precision: 16-mixed

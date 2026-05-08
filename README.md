@@ -16,9 +16,11 @@ The project is educational by design. The notebooks explain the workflow step by
 
 ## Updates
 
-tutorial/04_downstream_seg_on_full_sr.ipynb is on its way!
+`tutorial/04_full_sr_downstream_synthseg.ipynb` is now available.
 
-We will show a more complete SR prediction with larger models, and how they influence the downstream segmentation task with SynthSeg!
+It demonstrates full-SR inference with larger checkpoints and downstream segmentation analysis with SynthSeg.
+
+---
 
 ## Repository Structure
 
@@ -47,7 +49,8 @@ MRI_SR_Tutorial/
 │   ├── 00_environment_setup.ipynb
 │   ├── 01_data_preparation.ipynb
 │   ├── 02_training.ipynb
-│   └── 03_evaluation.ipynb
+│   ├── 03_evaluation.ipynb
+│   └── 04_full_sr_downstream_synthseg.ipynb
 │
 ├── dataset.py
 ├── loss.py
@@ -109,6 +112,7 @@ tutorial/00_environment_setup.ipynb
 tutorial/01_data_preparation.ipynb
 tutorial/02_training.ipynb
 tutorial/03_evaluation.ipynb
+tutorial/04_full_sr_downstream_synthseg.ipynb
 ```
 
 ### 00. Environment Setup
@@ -150,7 +154,16 @@ The evaluation includes:
 - inference speed
 - visualization of reconstructed MRI volumes
 
-The notebook also emphasizes that global image-quality metrics may not fully reflect medical image quality. Visual inspection is important for checking anatomical structures, artifacts, and over-smoothing.
+### 04. Full SR Inference and Downstream SynthSeg
+
+This notebook extends the evaluation track to a stronger, more practical setting.
+
+It covers:
+
+- running full 2.5D SR checkpoints (`config/*_full.yaml`) for UNet, DDPM, and Flow Matching
+- visualizing complete 3D results from `examples/` (`LR`, `HR`, `unet_2p5d_full`, `ddpm_2p5d_full`, `fm_2p5d_full`)
+- using SynthSeg outputs for LR/SR and Neurite-OASIS labels in `HR/seg` as ground truth
+- mapping SynthSeg labels to Neurite seg4 and reporting Dice by structure (`Cortex`, `SubcorticalGM`, `WhiteMatter`, `CSF_Ventricles`) plus mean Dice
 
 ---
 

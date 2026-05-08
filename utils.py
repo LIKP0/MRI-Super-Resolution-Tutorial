@@ -1,13 +1,12 @@
 ﻿import csv
-import os
-from pathlib import Path
-import numpy as np
 import importlib
+from pathlib import Path
+from typing import Dict, List, Tuple, Union, TYPE_CHECKING
 import nibabel as nib
-import torch
+import numpy as np
 from scipy.ndimage import zoom
-from typing import Dict, List, Tuple, Union
-
+import torch
+import pandas as pd
 
 def get_module_from_config(model_name):
     """Resolve and return a class object from a fully qualified class path."""
@@ -422,7 +421,7 @@ def save_2d_nifti(x: Union[np.ndarray, torch.Tensor], out_path: Union[str, Path]
 
     Accepts [H, W], [1, H, W], or [H, W, 1]. Extra singleton dims are squeezed.
     """
-    if isinstance(x, torch.Tensor):
+    if torch is not None and isinstance(x, torch.Tensor):
         arr = x.detach().cpu().numpy()
     else:
         arr = np.asarray(x)
@@ -593,6 +592,357 @@ def visualize_gt_pred_from_3d_dir(result_3d_dir: Union[str, Path], model_name: s
         print(f"[SKIP] {model_name}: no matched LR-GT-Pred case found in {result_3d_dir}")
 
 
+def _build_case_map(folder: Path, suffix: str) -> Dict[str, Path]:
+    """Map case key -> file path by removing a filename suffix."""
+    mapping: Dict[str, Path] = {}
+    for p in sorted(folder.glob(f"*{suffix}")):
+        key = p.name[: -len(suffix)]
+        mapping[key] = p
+    return mapping
+
+
+def _center_view_by_axis(volume: np.ndarray, axis: int) -> np.ndarray:
+    """Return the center slice view for a given axis with display-friendly rotation."""
+    si = volume.shape[axis] // 2
+    sl = np.take(volume, si, axis=axis)
+    view = np.rot90(sl)
+    if axis == 0:
+        view = np.rot90(view, k=-1)
+    elif axis == 2:
+        view = np.rot90(view, k=-2)
+    return view
+
+
+def visualize_examples_sr(
+        lr_dir: Union[str, Path],
+        hr_dir: Union[str, Path],
+        unet_sr_dir: Union[str, Path],
+        ddpm_sr_dir: Union[str, Path],
+        fm_sr_dir: Union[str, Path],
+        max_cases: int = 3,
+) -> None:
+    """
+    Visualize LR/UNet-SR/DDPM-SR/FM-SR/HR in a 3x5 grid per case.
+
+    Row order: axis=1, axis=0, axis=2.
+    Column order: LR, UNet, DDPM, FM, HR.
+    """
+    import matplotlib.pyplot as plt
+
+    lr_dir = Path(lr_dir)
+    hr_dir = Path(hr_dir)
+    unet_sr_dir = Path(unet_sr_dir)
+    ddpm_sr_dir = Path(ddpm_sr_dir)
+    fm_sr_dir = Path(fm_sr_dir)
+
+    for p in [lr_dir, hr_dir, unet_sr_dir, ddpm_sr_dir, fm_sr_dir]:
+        if not p.exists():
+            print(f"[SKIP] folder not found: {p}")
+            return
+
+    lr_map = _build_case_map(lr_dir, "_LR.nii.gz")
+    hr_map = _build_case_map(hr_dir, "_HR.nii.gz")
+    unet_map = _build_case_map(unet_sr_dir, "_SR.nii.gz")
+    ddpm_map = _build_case_map(ddpm_sr_dir, "_SR.nii.gz")
+    fm_map = _build_case_map(fm_sr_dir, "_SR.nii.gz")
+
+    case_keys = sorted(set(lr_map) & set(hr_map) & set(unet_map) & set(ddpm_map) & set(fm_map))
+    if len(case_keys) == 0:
+        print("[SKIP] no matched cases among LR/HR/UNet/DDPM/FM folders")
+        return
+
+    axis_rows = [1, 0, 2]
+    col_names = ["LR", "UNet", "DDPM", "FM", "HR"]
+    selected = case_keys[:max_cases]
+
+    for case_key in selected:
+        vol_paths = [
+            lr_map[case_key],
+            unet_map[case_key],
+            ddpm_map[case_key],
+            fm_map[case_key],
+            hr_map[case_key],
+        ]
+        volumes = [np.asarray(nib.load(str(p)).dataobj, dtype=np.float32) for p in vol_paths]
+
+        fig, axes = plt.subplots(3, 5, figsize=(18, 10))
+        fig.suptitle(case_key)
+
+        for i, axis in enumerate(axis_rows):
+            for j, (name, vol) in enumerate(zip(col_names, volumes)):
+                axes[i, j].imshow(_center_view_by_axis(vol, axis=axis), cmap="gray")
+                axes[i, j].set_title(f"{name} | axis={axis}")
+                axes[i, j].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+
+SYNTHSEG_TO_NEURITE_SEG4 = {
+    # Cortex
+    3: 1,
+    42: 1,
+    8: 1,
+    47: 1,
+    # Subcortical Gray Matter
+    10: 2,
+    49: 2,
+    11: 2,
+    50: 2,
+    12: 2,
+    51: 2,
+    13: 2,
+    52: 2,
+    17: 2,
+    53: 2,
+    18: 2,
+    54: 2,
+    26: 2,
+    58: 2,
+    28: 2,
+    60: 2,
+    # White Matter
+    2: 3,
+    41: 3,
+    7: 3,
+    46: 3,
+    # CSF / Ventricles
+    4: 4,
+    43: 4,
+    5: 4,
+    44: 4,
+    14: 4,
+    15: 4,
+    24: 4,
+}
+
+
+def map_synthseg_to_neurite_seg4(seg: np.ndarray) -> np.ndarray:
+    """Map SynthSeg labels into Neurite seg4 label space {0,1,2,3,4}."""
+    seg_i = np.asarray(seg, dtype=np.int16)
+    mapped = np.zeros_like(seg_i, dtype=np.int16)
+    for src_label, dst_label in SYNTHSEG_TO_NEURITE_SEG4.items():
+        mapped[seg_i == src_label] = dst_label
+    return mapped
+
+
+def _case_key_before_mr(path: Path) -> str:
+    """Return the case key before '_MR' from a NIfTI filename."""
+    name = path.name
+    if name.endswith(".nii.gz"):
+        name = name[:-7]
+    mr_idx = name.find("_MR")
+    if mr_idx == -1:
+        return name
+    return name[:mr_idx]
+
+
+def _build_case_map_before_mr(folder: Path) -> Dict[str, Path]:
+    """Map case key(before _MR) -> file path for all .nii.gz under a folder."""
+    mapping: Dict[str, Path] = {}
+    for p in sorted(folder.glob("*.nii.gz")):
+        mapping[_case_key_before_mr(p)] = p
+    return mapping
+
+
+def visualize_examples_sr_with_seg(
+        lr_dir: Union[str, Path],
+        hr_dir: Union[str, Path],
+        unet_sr_dir: Union[str, Path],
+        ddpm_sr_dir: Union[str, Path],
+        fm_sr_dir: Union[str, Path],
+        max_cases: int = 3,
+) -> None:
+    """
+    Visualize 5 modalities and their segmentations.
+
+    - Columns: LR, UNet, DDPM, FM, HR
+    - For each axis in [1, 0, 2], use two rows:
+      first row is image, second row is segmentation.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+
+    lr_dir = Path(lr_dir)
+    hr_dir = Path(hr_dir)
+    unet_sr_dir = Path(unet_sr_dir)
+    ddpm_sr_dir = Path(ddpm_sr_dir)
+    fm_sr_dir = Path(fm_sr_dir)
+
+    lr_seg_dir = lr_dir / "seg"
+    hr_seg_dir = hr_dir / "seg"
+    unet_seg_dir = unet_sr_dir / "seg"
+    ddpm_seg_dir = ddpm_sr_dir / "seg"
+    fm_seg_dir = fm_sr_dir / "seg"
+
+    required_dirs = [
+        lr_dir, hr_dir, unet_sr_dir, ddpm_sr_dir, fm_sr_dir,
+        lr_seg_dir, hr_seg_dir, unet_seg_dir, ddpm_seg_dir, fm_seg_dir,
+    ]
+    for p in required_dirs:
+        if not p.exists():
+            print(f"[SKIP] folder not found: {p}")
+            return
+
+    img_maps = {
+        "LR": _build_case_map_before_mr(lr_dir),
+        "UNet": _build_case_map_before_mr(unet_sr_dir),
+        "DDPM": _build_case_map_before_mr(ddpm_sr_dir),
+        "FM": _build_case_map_before_mr(fm_sr_dir),
+        "HR": _build_case_map_before_mr(hr_dir),
+    }
+    seg_maps = {
+        "LR": _build_case_map_before_mr(lr_seg_dir),
+        "UNet": _build_case_map_before_mr(unet_seg_dir),
+        "DDPM": _build_case_map_before_mr(ddpm_seg_dir),
+        "FM": _build_case_map_before_mr(fm_seg_dir),
+        "HR": _build_case_map_before_mr(hr_seg_dir),
+    }
+
+    case_keys = set(img_maps["LR"].keys())
+    for name in ["UNet", "DDPM", "FM", "HR"]:
+        case_keys &= set(img_maps[name].keys())
+    for name in ["LR", "UNet", "DDPM", "FM", "HR"]:
+        case_keys &= set(seg_maps[name].keys())
+    case_keys = sorted(case_keys)
+
+    if len(case_keys) == 0:
+        print("[SKIP] no matched image+seg cases found across LR/UNet/DDPM/FM/HR")
+        return
+
+    axis_rows = [1, 0, 2]
+    col_names = ["LR", "UNet", "DDPM", "FM", "HR"]
+    seg_cmap = ListedColormap(["#000000", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"])
+    selected = case_keys[:max_cases]
+
+    for case_key in selected:
+        imgs = {
+            k: np.asarray(nib.load(str(img_maps[k][case_key])).dataobj, dtype=np.float32)
+            for k in col_names
+        }
+        segs = {}
+        for k in col_names:
+            seg = np.asarray(nib.load(str(seg_maps[k][case_key])).dataobj, dtype=np.int16)
+            # HR/seg is Neurite GT; others are SynthSeg predictions and need mapping.
+            if k != "HR":
+                seg = map_synthseg_to_neurite_seg4(seg)
+            segs[k] = seg
+
+        fig, axes = plt.subplots(6, 5, figsize=(18, 18))
+        fig.suptitle(f"{case_key} | rows: axis=1,0,2 (image then seg)")
+
+        for i, axis in enumerate(axis_rows):
+            img_row = 2 * i
+            seg_row = img_row + 1
+            for j, name in enumerate(col_names):
+                axes[img_row, j].imshow(_center_view_by_axis(imgs[name], axis=axis), cmap="gray")
+                axes[img_row, j].set_title(f"{name} img | axis={axis}")
+                axes[img_row, j].axis("off")
+
+                axes[seg_row, j].imshow(
+                    _center_view_by_axis(segs[name], axis=axis),
+                    cmap=seg_cmap,
+                    interpolation="nearest",
+                    vmin=0,
+                    vmax=4,
+                )
+                axes[seg_row, j].set_title(f"{name} seg | axis={axis}")
+                axes[seg_row, j].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+
+def _dice_for_label(pred: np.ndarray, gt: np.ndarray, label: int) -> float:
+    """Compute Dice for one label with empty-empty treated as 1.0."""
+    pred_bin = (pred == label)
+    gt_bin = (gt == label)
+    pred_sum = int(pred_bin.sum())
+    gt_sum = int(gt_bin.sum())
+    if pred_sum == 0 and gt_sum == 0:
+        return 1.0
+    inter = int((pred_bin & gt_bin).sum())
+    return float(2.0 * inter / (pred_sum + gt_sum + 1e-8))
+
+
+def compute_examples_seg_dice_table(
+        lr_dir: Union[str, Path],
+        hr_dir: Union[str, Path],
+        unet_sr_dir: Union[str, Path],
+        ddpm_sr_dir: Union[str, Path],
+        fm_sr_dir: Union[str, Path],
+) -> Tuple["pd.DataFrame", "pd.DataFrame"]:
+    """
+    Compute per-case and summary Dice tables using the same matching/mapping rule as section 4.
+
+    - Seg path: <img_dir>/seg
+    - Pairing key: filename prefix before '_MR'
+    - HR seg is GT in neurite seg4 label space
+    - LR/UNet/DDPM/FM seg are SynthSeg outputs and will be mapped to neurite seg4
+    """
+    import pandas as pd
+
+    lr_dir = Path(lr_dir)
+    hr_dir = Path(hr_dir)
+    unet_sr_dir = Path(unet_sr_dir)
+    ddpm_sr_dir = Path(ddpm_sr_dir)
+    fm_sr_dir = Path(fm_sr_dir)
+
+    seg_dirs = {
+        "LR": lr_dir / "seg",
+        "UNet": unet_sr_dir / "seg",
+        "DDPM": ddpm_sr_dir / "seg",
+        "FM": fm_sr_dir / "seg",
+        "HR": hr_dir / "seg",
+    }
+
+    for name, p in seg_dirs.items():
+        if not p.exists():
+            raise FileNotFoundError(f"{name} seg folder not found: {p}")
+
+    seg_maps = {name: _build_case_map_before_mr(folder) for name, folder in seg_dirs.items()}
+
+    case_keys = set(seg_maps["HR"].keys())
+    for name in ["LR", "UNet", "DDPM", "FM"]:
+        case_keys &= set(seg_maps[name].keys())
+    case_keys = sorted(case_keys)
+    if len(case_keys) == 0:
+        raise RuntimeError("No matched cases found across LR/UNet/DDPM/FM/HR segmentation folders.")
+
+    label_cols = {
+        1: "Cortex",
+        2: "SubcorticalGM",
+        3: "WhiteMatter",
+        4: "CSF_Ventricles",
+    }
+
+    records = []
+    for case_key in case_keys:
+        gt = np.asarray(nib.load(str(seg_maps["HR"][case_key])).dataobj, dtype=np.int16)
+
+        for model_name in ["LR", "UNet", "DDPM", "FM"]:
+            pred = np.asarray(nib.load(str(seg_maps[model_name][case_key])).dataobj, dtype=np.int16)
+            pred = map_synthseg_to_neurite_seg4(pred)
+
+            row = {"case": case_key, "model": model_name}
+            label_dices = []
+            for lb, lb_name in label_cols.items():
+                d = _dice_for_label(pred, gt, label=lb)
+                row[lb_name] = d
+                label_dices.append(d)
+            row["MeanDice"] = float(np.mean(label_dices))
+            records.append(row)
+
+    case_df = pd.DataFrame(records).sort_values(["model", "case"]).reset_index(drop=True)
+    summary_df = (
+        case_df.groupby("model", as_index=True)[list(label_cols.values()) + ["MeanDice"]]
+        .mean()
+        .reindex(["LR", "UNet", "DDPM", "FM"])
+    )
+
+    return case_df, summary_df
+
+
 def to_hms_str(elapsed_seconds):
     """Format elapsed seconds as 'HHhMMmSSs'."""
     total = int(round(elapsed_seconds))
@@ -600,3 +950,5 @@ def to_hms_str(elapsed_seconds):
     m = (total % 3600) // 60
     s = total % 60
     return f"{h:02d}h{m:02d}m{s:02d}s"
+
+

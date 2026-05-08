@@ -11,7 +11,7 @@ model:
     val_metric_batches: 5
 
 data:
-  target: dataset.TwoP5DSRSliceDataModule
+  target: dataset.DegradeSRSliceDataModule
   params:
     data_dir: data/
     batch_size: 32

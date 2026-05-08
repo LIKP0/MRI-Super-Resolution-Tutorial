@@ -35,7 +35,7 @@ def _build_metrics_summary(count, psnr, ssim, mae, result_dir):
     return {"metrics": metrics, "summary": summary}
 
 
-def test_sr(model, dataloader, device, result_dir, num_inference_steps=100):
+def test_sr(model, dataloader, device, result_dir, num_inference_steps=None):
     test_psnr = PeakSignalNoiseRatio(data_range=1.0).to(device)
     test_ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     test_mae = MeanAbsoluteError().to(device)
@@ -97,6 +97,8 @@ if __name__ == "__main__":
     model_class = get_module_from_config(model_name=model_target)
     model = model_class.load_from_checkpoint(ckpt_path, **config["model"]["params"])
 
+    num_inference_steps = config["model"]["params"].get("num_inference_steps", None)
+
     result_dir = os.path.join(config['test_output_dir'])
     os.makedirs(result_dir, exist_ok=True)
 
@@ -112,8 +114,7 @@ if __name__ == "__main__":
     with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=scaler_dtype):
         dataloader = dm.test_dataloader()
         t_start = time.perf_counter()
-        # metrics = test_sr(model, dataloader, device, result_dir, num_inference_steps=100) # For DDIM
-        metrics = test_sr(model, dataloader, device, result_dir, num_inference_steps=16)  # For FM
+        metrics = test_sr(model, dataloader, device, result_dir, num_inference_steps=num_inference_steps)
         t_elapsed = time.perf_counter() - t_start
         print(metrics["summary"])
         print(f"[INFO] test time: {to_hms_str(t_elapsed)}")

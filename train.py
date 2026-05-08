@@ -55,6 +55,8 @@ if __name__ == "__main__":
     )
     lr_cb = LearningRateMonitor(logging_interval="step")
 
+    # Recommend to create a wandb account to use this
+    # Or you can use a CSVLogger instead
     logger = WandbLogger(
         project=config['log']['project'],
         name=experiment_name,
