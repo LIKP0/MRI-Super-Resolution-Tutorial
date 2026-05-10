@@ -17,6 +17,7 @@ data:
     slice_nums: 32
     depth: 9
     cache_mode: memmap
+    downsample_scale: 6
 
 trainer:
   devices: [0]
