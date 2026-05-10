@@ -29,11 +29,8 @@ MRI_SR_Tutorial/
 ├── checkpoints/              # Local model checkpoints, not uploaded to GitHub
 ├── config/
 │   ├── ddpm_2p5d.yaml
-│   ├── ddpm_2p5d_full.yaml
 │   ├── fm_2p5d.yaml
-│   ├── fm_2p5d_full.yaml
-│   ├── unet_2p5d.yaml
-│   └── unet_2p5d_full.yaml
+│   └── unet_2p5d.yaml
 │
 ├── data/                     # Local raw and processed data, not uploaded to GitHub
 ├── logs/                     # Local training logs, not uploaded to GitHub
